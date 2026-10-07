@@ -1,0 +1,67 @@
+name: Build & Validate
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure (universal binary)
+        run: cmake -S . -B build -G Xcode -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+      - name: Build plug-ins and tests
+        run: cmake --build build --config Release --target RecklessHS20_VST3 RecklessHS20_AU RecklessHS20_Standalone HS20Tests -- -quiet
+
+      - name: Unit tests (DSP, 196 presets, likes)
+        run: ./build/HS20Tests_artefacts/Release/HS20Tests
+
+      - name: Install plug-ins for validation
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components ~/Library/Audio/Plug-Ins/VST3
+          cp -R "build/RecklessHS20_artefacts/Release/AU/Reckless HS20.component" ~/Library/Audio/Plug-Ins/Components/
+          cp -R "build/RecklessHS20_artefacts/Release/VST3/Reckless HS20.vst3" ~/Library/Audio/Plug-Ins/VST3/
+          killall -9 AudioComponentRegistrar || true
+
+      - name: auval
+        run: auval -strict -v aumu Hs20 Rckl
+
+      - name: pluginval (VST3 + AU)
+        run: |
+          curl -sSL -o pluginval.zip https://github.com/Tracktion/pluginval/releases/download/v1.0.4/pluginval_macOS.zip
+          unzip -q pluginval.zip
+          PV=pluginval.app/Contents/MacOS/pluginval
+          $PV --strictness-level 5 --skip-gui-tests --validate-in-process "$HOME/Library/Audio/Plug-Ins/VST3/Reckless HS20.vst3"
+          $PV --strictness-level 5 --skip-gui-tests --validate-in-process "$HOME/Library/Audio/Plug-Ins/Components/Reckless HS20.component"
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cd build/RecklessHS20_artefacts/Release
+          ditto -c -k --keepParent "VST3/Reckless HS20.vst3" "$GITHUB_WORKSPACE/dist/Reckless-HS20-VST3-macOS.zip"
+          ditto -c -k --keepParent "AU/Reckless HS20.component" "$GITHUB_WORKSPACE/dist/Reckless-HS20-AU-macOS.zip"
+          ditto -c -k --keepParent "Standalone/Reckless HS20.app" "$GITHUB_WORKSPACE/dist/Reckless-HS20-Standalone-macOS.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Reckless-HS20-macOS
+          path: dist/*.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.zip --title "Reckless HS20 $GITHUB_REF_NAME" --notes-file docs/RELEASE_NOTES.md \
+            || gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
