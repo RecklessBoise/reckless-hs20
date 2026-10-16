@@ -1,8 +1,51 @@
 #include "PresetManager.h"
 #include "HS20BinaryData.h"
+#include "../ParameterBridge.h"
+#include "../dsp/SynthEngine.h"
 
 namespace hs20
 {
+    namespace
+    {
+        // Plays one note offline through a private engine and returns the
+        // loudest 50 ms window in dBFS (same measure as the factory library).
+        float measureLoudness (juce::AudioProcessorValueTreeState& state, int note)
+        {
+            constexpr double sampleRate = 48000.0;
+            constexpr int block = 512;
+            dsp::SynthEngine engine;
+            dsp::EngineParams params;
+            ParameterBridge (state).read (params);
+            engine.prepare (sampleRate, block);
+
+            juce::AudioBuffer<float> buffer (1, block);
+            const int window = 2400;
+            double acc = 0.0, loudest = 0.0;
+            int filled = 0;
+
+            for (int b = 0; b < 70; ++b)  // ~0.75 s
+            {
+                juce::MidiBuffer midi;
+                if (b == 0)  midi.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) 100), 0);
+                if (b == 55) midi.addEvent (juce::MidiMessage::noteOff (1, note), 0);
+                engine.render (buffer, midi, nullptr, params);
+
+                for (int i = 0; i < block; ++i)
+                {
+                    const double v = buffer.getSample (0, i);
+                    acc += v * v;
+                    if (++filled == window)
+                    {
+                        loudest = std::max (loudest, acc / window);
+                        acc = 0.0;
+                        filled = 0;
+                    }
+                }
+            }
+            return (float) (10.0 * std::log10 (loudest + 1.0e-12));
+        }
+    }
+
     PresetManager::PresetManager (juce::AudioProcessorValueTreeState& state, juce::File dataDirectory)
         : apvts (state), dataDir (std::move (dataDirectory))
     {
@@ -127,12 +170,16 @@ namespace hs20
 
     juce::String PresetManager::getCurrentName() const
     {
+        if (isRandomPatch())
+            return randomName;
         return juce::isPositiveAndBelow (currentIndex, (int) presets.size()) ? presets[(size_t) currentIndex].name
                                                                               : juce::String ("Init");
     }
 
     juce::String PresetManager::getCurrentKey() const
     {
+        if (isRandomPatch())
+            return "random/" + randomStyle + "/" + randomName;
         return juce::isPositiveAndBelow (currentIndex, (int) presets.size()) ? presets[(size_t) currentIndex].key()
                                                                               : juce::String();
     }
@@ -148,6 +195,12 @@ namespace hs20
     void PresetManager::restoreCurrent (const juce::String& key)
     {
         currentIndex = findPreset (key);
+        randomName = randomStyle = {};
+        if (key.startsWith ("random/"))
+        {
+            randomStyle = key.fromFirstOccurrenceOf ("random/", false, false).upToFirstOccurrenceOf ("/", false, false);
+            randomName = key.fromLastOccurrenceOf ("/", false, false);
+        }
         sendChangeMessage();
     }
 
@@ -183,6 +236,7 @@ namespace hs20
 
         applyParams (presets[(size_t) index].params);
         currentIndex = index;
+        randomName = randomStyle = {};
         sendChangeMessage();
         return true;
     }
@@ -197,6 +251,47 @@ namespace hs20
         int pos = it == list.end() ? (delta > 0 ? -1 : 0) : (int) std::distance (list.begin(), it);
         pos = (pos + delta + (int) list.size()) % (int) list.size();
         loadPreset (list[(size_t) pos]);
+    }
+
+    void PresetManager::loadRandom (RandomStyle style)
+    {
+        const auto patch = makeRandomPatch (style, random);
+        applyParams (patch.params);
+
+        // Self-levelling: bring every roll close to the factory presets' loudness.
+        if (auto* volume = apvts.getParameter (ids::volume))
+        {
+            const int note = patch.style == "Bass" ? 43 : 60;
+            for (int pass = 0; pass < 2; ++pass)
+            {
+                const float level = measureLoudness (apvts, note);
+                if (level < -90.0f)
+                    break;
+                const float current = volume->convertFrom0to1 (volume->getValue());
+                const float target = juce::jlimit (2.0f, 10.0f, current * std::pow (10.0f, (-14.0f - level) / 40.0f));
+                volume->setValueNotifyingHost (volume->convertTo0to1 (target));
+            }
+        }
+        currentIndex = -1;
+        randomName = patch.name;
+        randomStyle = patch.style;
+        sendChangeMessage();
+    }
+
+    void PresetManager::likeCurrent()
+    {
+        if (isRandomPatch())
+        {
+            auto name = randomName;
+            for (int n = 2; findPreset ("user/" + bankUser + "/" + name) >= 0; ++n)
+                name = randomName + " " + juce::String (n);
+
+            const int index = saveUserPreset (name, bankUser);
+            if (index >= 0)
+                setLiked (index, true);
+            return;
+        }
+        toggleLiked (currentIndex);
     }
 
     bool PresetManager::isLiked (int index) const
@@ -280,6 +375,7 @@ namespace hs20
 
         rescan();
         currentIndex = findPreset (p.key());
+        randomName = randomStyle = {};
         writeLikedBank();
         sendChangeMessage();
         return currentIndex;

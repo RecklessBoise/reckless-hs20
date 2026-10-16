@@ -3,7 +3,7 @@
 using hs20::ui::SynthPanel;
 
 HS20AudioProcessorEditor::HS20AudioProcessorEditor (HS20AudioProcessor& p)
-    : AudioProcessorEditor (&p), processor (p), panel (p)
+    : AudioProcessorEditor (&p), hs20Processor (p), panel (p)
 {
     setLookAndFeel (&lookAndFeel);
     addAndMakeVisible (panel);
@@ -18,13 +18,13 @@ HS20AudioProcessorEditor::HS20AudioProcessorEditor (HS20AudioProcessor& p)
     setResizeLimits (SynthPanel::baseWidth / 2, SynthPanel::baseHeight / 2, SynthPanel::baseWidth * 2, SynthPanel::baseHeight * 2);
     getConstrainer()->setFixedAspectRatio ((double) SynthPanel::baseWidth / (double) SynthPanel::baseHeight);
 
-    const float scale = processor.getUiScale();
+    const float scale = hs20Processor.getUiScale();
     setSize (juce::roundToInt (SynthPanel::baseWidth * scale), juce::roundToInt (SynthPanel::baseHeight * scale));
 }
 
 HS20AudioProcessorEditor::~HS20AudioProcessorEditor()
 {
-    processor.setUiScale (currentScale());
+    hs20Processor.setUiScale (currentScale());
     setLookAndFeel (nullptr);
 }
 

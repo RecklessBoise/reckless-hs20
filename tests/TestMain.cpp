@@ -8,6 +8,7 @@
 #include "Parameters.h"
 #include "dsp/SynthEngine.h"
 #include "presets/PresetManager.h"
+#include "presets/PresetRandomizer.h"
 
 namespace
 {
@@ -368,6 +369,61 @@ private:
     juce::File levelsFile;
 };
 
+class RandomizerTests : public juce::UnitTest
+{
+public:
+    RandomizerTests() : juce::UnitTest ("Randomizer", "HS20") {}
+
+    void runTest() override
+    {
+        TestProcessor proc;
+        const auto dir = makeTempDir();
+        hs20::PresetManager pm (proc.apvts, dir);
+
+        for (int style = 0; style < hs20::randomStyleNames().size(); ++style)
+        {
+            beginTest ("Random " + hs20::randomStyleNames()[style] + " patches are playable");
+            float quietest = 0.0f, loudest = -200.0f;
+            for (int i = 0; i < 25; ++i)
+            {
+                pm.loadRandom ((hs20::RandomStyle) style);
+                expect (pm.isRandomPatch() && pm.getCurrentName().isNotEmpty());
+                const int note = pm.getRandomStyle() == "Bass" ? 43 : 60;
+                auto stats = render (proc.apvts, note, 1.5, 1.0);
+                const auto label = pm.getRandomStyle() + " '" + pm.getCurrentName() + "'";
+                expect (stats.finite, label + " produced NaN/Inf");
+                expect (stats.peak <= 1.0f, label + " clips");
+                expect (stats.loudestWindowDb > -40.0f, label + " is too quiet: " + juce::String (stats.loudestWindowDb));
+                quietest = std::min (quietest, stats.loudestWindowDb);
+                loudest = std::max (loudest, stats.loudestWindowDb);
+            }
+            logMessage ("  level range " + juce::String (quietest, 1) + " .. " + juce::String (loudest, 1) + " dB");
+            expect (loudest - quietest < 12.0f, "random patches should be level-matched");
+        }
+
+        beginTest ("Rolling the die shows a named, unsaved patch");
+        pm.loadRandom (hs20::RandomStyle::lead);
+        expect (pm.isRandomPatch());
+        expectEquals (pm.getRandomStyle(), juce::String ("Lead"));
+        expect (pm.getCurrentKey().startsWith ("random/Lead/"));
+        const auto name = pm.getCurrentName();
+
+        beginTest ("Liking a random patch saves it and adds it to the Liked bank");
+        pm.likeCurrent();
+        expect (! pm.isRandomPatch());
+        expect (pm.getCurrentIndex() >= pm.getNumFactoryPresets());
+        expectEquals (pm.getCurrentName(), name);
+        expect (pm.isLiked (pm.getCurrentIndex()));
+
+        beginTest ("Loading a preset clears the random state");
+        pm.loadRandom (hs20::RandomStyle::any);
+        pm.loadPreset (0);
+        expect (! pm.isRandomPatch());
+
+        dir.deleteRecursively();
+    }
+};
+
 int main (int argc, char** argv)
 {
     juce::ScopedJuceInitialiser_GUI init;
@@ -380,10 +436,11 @@ int main (int argc, char** argv)
     FilterTests filterTests;
     EngineTests engineTests;
     PresetTests presetTests (levels);
+    RandomizerTests randomizerTests;
 
     juce::UnitTestRunner runner;
     runner.setAssertOnFailure (false);
-    runner.runTests ({ &filterTests, &engineTests, &presetTests });
+    runner.runTests ({ &filterTests, &engineTests, &presetTests, &randomizerTests });
 
     int failures = 0;
     for (int i = 0; i < runner.getNumResults(); ++i)

@@ -26,7 +26,8 @@ set(HS20_CORE_SOURCES
     Source/Parameters.cpp
     Source/ParameterBridge.cpp
     Source/dsp/SynthEngine.cpp
-    Source/presets/PresetManager.cpp)
+    Source/presets/PresetManager.cpp
+    Source/presets/PresetRandomizer.cpp)
 
 set(HS20_UI_SOURCES
     Source/PluginProcessor.cpp

@@ -18,7 +18,7 @@ public:
 private:
     float currentScale() const { return (float) getWidth() / (float) hs20::ui::SynthPanel::baseWidth; }
 
-    HS20AudioProcessor& processor;
+    HS20AudioProcessor& hs20Processor;
     hs20::ui::HS20LookAndFeel lookAndFeel;
     hs20::ui::SynthPanel panel;
 

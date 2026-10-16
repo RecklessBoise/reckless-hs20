@@ -25,6 +25,92 @@ namespace hs20::ui
         }
     }
 
+    //==========================================================================
+    DiceButton::DiceButton() : juce::Button ("Random")
+    {
+        setTooltip ("Random patch: click to roll, right-click to choose the kind of sound");
+    }
+
+    void DiceButton::mouseDown (const juce::MouseEvent& e)
+    {
+        if (e.mods.isPopupMenu() || e.mods.isCommandDown())
+        {
+            if (onStyleMenu)
+                onStyleMenu();
+            return;
+        }
+        juce::Button::mouseDown (e);
+    }
+
+    void DiceButton::roll()
+    {
+        tumbleFrames = 8;
+        startTimerHz (40);
+    }
+
+    void DiceButton::timerCallback()
+    {
+        int next = face;
+        while (next == face)
+            next = 1 + rng.nextInt (6);
+        face = next;
+        angle = tumbleFrames > 1 ? (rng.nextFloat() - 0.5f) * 0.9f : 0.0f;
+        repaint();
+
+        if (--tumbleFrames <= 0)
+        {
+            stopTimer();
+            angle = 0.0f;
+            repaint();
+            if (onRolled)
+                onRolled();
+        }
+    }
+
+    void DiceButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+    {
+        const float size = (float) juce::jmin (getWidth(), getHeight()) - 6.0f;
+        auto body = juce::Rectangle<float> (size, size).withCentre (getLocalBounds().toFloat().getCentre())
+                                                       .translated (0.0f, down ? 1.0f : 0.0f);
+        const auto centre = body.getCentre();
+        const auto spin = juce::AffineTransform::rotation (angle, centre.x, centre.y);
+        const float corner = size * 0.22f;
+
+        juce::Path cube;
+        cube.addRoundedRectangle (body, corner);
+
+        // drop shadow, then an ivory body with a bevel, like a worn bakelite die
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.fillPath (cube, spin.translated (1.0f, 2.0f));
+
+        juce::ColourGradient ivory (juce::Colour (0xfff6f1e4), body.getX(), body.getY(),
+                                    juce::Colour (0xffb9b2a2), body.getRight(), body.getBottom(), false);
+        g.setGradientFill (ivory);
+        g.fillPath (cube, spin);
+        g.setColour (highlighted ? colours::accent : juce::Colour (0xff4a463e));
+        g.strokePath (cube, juce::PathStrokeType (highlighted ? 1.6f : 1.0f), spin);
+
+        // pip layout on a 3x3 grid
+        static const int layouts[6][9] = {
+            { 0,0,0, 0,1,0, 0,0,0 }, { 1,0,0, 0,0,0, 0,0,1 }, { 1,0,0, 0,1,0, 0,0,1 },
+            { 1,0,1, 0,0,0, 1,0,1 }, { 1,0,1, 0,1,0, 1,0,1 }, { 1,0,1, 1,0,1, 1,0,1 }
+        };
+        const float step = size * 0.27f, pip = size * 0.17f;
+        for (int i = 0; i < 9; ++i)
+        {
+            if (layouts[face - 1][i] == 0)
+                continue;
+            const auto p = juce::Point<float> (centre.x + (float) (i % 3 - 1) * step, centre.y + (float) (i / 3 - 1) * step)
+                               .transformedBy (spin);
+            // the single pip is red, as on classic dice
+            g.setColour (face == 1 ? colours::accent : juce::Colour (0xff141414));
+            g.fillEllipse (juce::Rectangle<float> (pip, pip).withCentre (p));
+            g.setColour (juce::Colours::white.withAlpha (0.35f));
+            g.fillEllipse (juce::Rectangle<float> (pip * 0.35f, pip * 0.3f).withCentre (p.translated (-pip * 0.15f, pip * 0.2f)));
+        }
+    }
+
+    //==========================================================================
     PresetBar::PresetBar (PresetManager& manager) : presets (manager)
     {
         addAndMakeVisible (bankBox);
@@ -49,7 +135,12 @@ namespace hs20::ui
 
         addAndMakeVisible (likeButton);
         likeButton.setTooltip ("Like this preset: it is added to the Liked bank");
-        likeButton.onClick = [this] { presets.toggleLiked (presets.getCurrentIndex()); };
+        likeButton.onClick = [this] { presets.likeCurrent(); };
+
+        addAndMakeVisible (diceButton);
+        diceButton.onClick = [this] { diceButton.roll(); };
+        diceButton.onRolled = [this] { presets.loadRandom (diceButton.style); };
+        diceButton.onStyleMenu = [this] { showDiceMenu(); };
 
         addAndMakeVisible (likedCount);
         likedCount.setFont (HS20LookAndFeel::panelFont (10.0f));
@@ -79,9 +170,11 @@ namespace hs20::ui
         juce::String label = presets.getCurrentName();
         if (juce::isPositiveAndBelow (index, (int) presets.getPresets().size()))
             label = presets.getPresets()[(size_t) index].category.toUpperCase() + "  /  " + label;
+        else if (presets.isRandomPatch())
+            label = "RANDOM " + presets.getRandomStyle().toUpperCase() + "  /  " + label;
         nameButton.setButtonText (label);
         likeButton.setToggleState (presets.isLiked (index), juce::dontSendNotification);
-        likeButton.setEnabled (index >= 0);
+        likeButton.setEnabled (index >= 0 || presets.isRandomPatch());
         likedCount.setText (juce::String (presets.getNumLiked()), juce::dontSendNotification);
         repaint();
     }
@@ -102,6 +195,8 @@ namespace hs20::ui
         prevButton.setBounds (r.removeFromLeft (24));
         r.removeFromLeft (2);
         auto right = r.removeFromRight (150);
+        diceButton.setBounds (r.removeFromRight (34));
+        r.removeFromRight (4);
         nextButton.setBounds (r.removeFromRight (24));
         r.removeFromRight (2);
         nameButton.setBounds (r);
@@ -157,6 +252,24 @@ namespace hs20::ui
                             {
                                 if (safe != nullptr && result > 0)
                                     safe->presets.loadPreset (result - 1);
+                            });
+    }
+
+    void PresetBar::showDiceMenu()
+    {
+        juce::PopupMenu menu;
+        menu.addSectionHeader ("Random sound type");
+        const auto names = randomStyleNames();
+        for (int i = 0; i < names.size(); ++i)
+            menu.addItem (i + 1, names[i], true, (int) diceButton.style == i);
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (diceButton),
+                            [safe = juce::Component::SafePointer<PresetBar> (this)] (int result)
+                            {
+                                if (safe == nullptr || result <= 0)
+                                    return;
+                                safe->diceButton.style = (RandomStyle) (result - 1);
+                                safe->diceButton.roll();
                             });
     }
 

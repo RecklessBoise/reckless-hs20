@@ -47,6 +47,14 @@ Le volume de tous les presets est normalisé automatiquement, pour que la librai
 - `BANK ▸ Export Liked Bank…` exporte chaque preset liké (`.hs20preset`) et la banque complète dans le dossier de ton choix. `Import Bank…` la recharge, sur une autre machine par exemple.
 - `SAVE` enregistre tes propres sons (`Save + Like` les ajoute directement aux favoris).
 
+### 🎲 Presets aléatoires
+
+Le **dé** à côté des flèches crée un son aléatoire à chaque clic. Ce n'est pas du hasard pur : chaque lancer choisit un type de son (Bass, Lead, Pad, Pluck, FX ou Sequence) et tire chaque réglage dans une plage qui sonne juste. Il peut aussi brancher des câbles de patch utiles.
+
+- **Clic droit** sur le dé pour choisir le type de son à tirer (*Any* par défaut).
+- Chaque son tiré reçoit un nom (ex. *Rusty Comet*) et son volume est **ajusté automatiquement** au niveau des presets d'usine.
+- Un son te plaît ? Clique sur le ❤️ : il est **enregistré comme preset utilisateur et ajouté à la banque Liked** en un geste. Sinon, `SAVE` pour le nommer toi-même.
+
 ## Installation
 
 Télécharge les zips depuis l'onglet **Releases**, puis :

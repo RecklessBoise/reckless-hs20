@@ -24,7 +24,9 @@ public:
         const float scale = args.size() > 1 ? args[1].getFloatValue() : 1.0f;
 
         processor = std::make_unique<HS20AudioProcessor>();
-        if (args.size() > 2)
+        if (args.size() > 2 && args[2] == "random")
+            processor->presetManager.loadRandom (hs20::RandomStyle::any);
+        else if (args.size() > 2)
             processor->presetManager.loadPreset (processor->presetManager.findPreset (args[2]));
         processor->setUiScale (scale);
 

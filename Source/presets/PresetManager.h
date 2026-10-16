@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 
+#include "PresetRandomizer.h"
+
 namespace hs20
 {
     struct PresetInfo
@@ -52,6 +54,14 @@ namespace hs20
         juce::String getCurrentName() const;
         int findPreset (const juce::String& key) const;
 
+        // Rolls a random patch of the given style and applies it (unsaved).
+        void loadRandom (RandomStyle style);
+        bool isRandomPatch() const { return currentIndex < 0 && randomName.isNotEmpty(); }
+        juce::String getRandomStyle() const { return randomStyle; }
+
+        // Liking an unsaved random patch keeps it: it is saved as a user preset first.
+        void likeCurrent();
+
         bool isLiked (int index) const;
         void setLiked (int index, bool shouldBeLiked);
         void toggleLiked (int index) { setLiked (index, ! isLiked (index)); }
@@ -90,5 +100,7 @@ namespace hs20
         int currentIndex = -1;
         juce::String currentBank = bankAll;
         juce::StringArray likedKeys;
+        juce::String randomName, randomStyle;
+        juce::Random random;
     };
 }

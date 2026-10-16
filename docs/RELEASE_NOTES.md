@@ -1,3 +1,9 @@
+**v1.1.0** : bouton 🎲 de presets aléatoires.
+
+- Un clic sur le dé génère un son aléatoire musical (Bass, Lead, Pad, Pluck, FX, Sequence), avec câbles de patch et volume ajusté automatiquement
+- Clic droit sur le dé pour choisir le type de son
+- Le ❤️ sur un son aléatoire l'enregistre et l'ajoute directement à la banque Liked
+
 Première version du **Reckless HS20**, un synthé semi-modulaire inspiré du MS-20.
 
 - VST3, AU et application Standalone pour macOS (binaire universel Apple Silicon + Intel)
